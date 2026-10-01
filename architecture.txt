@@ -1,0 +1,215 @@
+================================================================================
+                          STRIVO - EMS PORTAL
+                    ARCHITECTURE & PLANNING DOCUMENT
+================================================================================
+
+Date: October 1, 2026
+Project: Strivo - Education Management System (EMS) Portal
+
+================================================================================
+1. DO WE NEED A BACKEND?
+================================================================================
+
+YES - and we already have one. Supabase is our backend.
+
+What Supabase provides:
+  - Database: PostgreSQL (already set up with 10 tables)
+  - Authentication: Email/password + Phone OTP (already working)
+  - Authorization: Row Level Security (already configured)
+  - File Storage: Supabase Storage (for content uploads, reports)
+  - API: Auto-generated REST + RPC endpoints
+
+We do NOT need to build a separate backend. Supabase handles it all.
+
+
+================================================================================
+2. DO WE NEED A FRONTEND?
+================================================================================
+
+YES - and we already have one too. The Flutter mobile app is our frontend.
+
+Since the requirement is MOBILE ONLY, we do NOT need:
+  - A separate web frontend
+  - The browser prototype (keep as design reference only)
+  - A separate admin panel website
+
+
+================================================================================
+3. RECOMMENDED ARCHITECTURE
+================================================================================
+
++---------------------------------------------------+
+|              Supabase (Backend)                    |
+|  PostgreSQL | Auth | Storage | RLS | Functions     |
++------------------------+--------------------------+
+                         |
++------------------------+--------------------------+
+|           Flutter Mobile App (Frontend)            |
+|                                                    |
+|  +--------------+  +--------------+  +-----------+ |
+|  |   Public     |  | Back Office  |  |Front Office| |
+|  |  (no auth)   |  |  (admin)     |  | (student)  | |
+|  |              |  |              |  |            | |
+|  | - Welcome    |  | - Students   |  | - Dashboard| |
+|  | - Coaches    |  | - Attendance |  | - Attendance| |
+|  | - Content    |  | - Leaves     |  | - Leaves   | |
+|  | - Announce   |  | - Content    |  | - Fees     | |
+|  | - Fees       |  | - Tasks      |  | - Content  | |
+|  | - Courses    |  | - Reports    |  | - Reports  | |
+|  |              |  | - Announce   |  | - Feedback | |
+|  +--------------+  +--------------+  +-----------+ |
+|                                                    |
+|  Shared: Auth | Theme | Models | Services          |
++----------------------------------------------------+
+
+
+================================================================================
+4. FLUTTER CODE ORGANIZATION
+================================================================================
+
+mobile/lib/
+  main.dart
+  app/
+    strivo_app.dart              # App entry, router
+    router.dart                  # GoRouter with role-based guards
+    theme.dart                   # Colors, typography
+  core/
+    config/                      # App config, Supabase keys
+    providers.dart               # Riverpod providers
+    models/                      # Data models (Student, Leave, etc.)
+    services/                    # Supabase API calls
+    utils/                       # Helpers, constants
+  features/
+    auth/                        # Login, OTP, role detection
+    public/                      # Welcome, coaches, content, announcements
+    back_office/                 # Admin-only pages
+      students/
+      attendance/
+      leaves/
+      content/
+      tasks/
+      reports/
+      announcements/
+    front_office/                # Student-only pages
+      dashboard/
+      attendance/
+      leaves/
+      fees/
+      content/
+      reports/
+      feedback/
+  shared/                        # Shared widgets across roles
+    widgets/
+    layouts/
+
+
+================================================================================
+5. ROLE-BASED FLOW
+================================================================================
+
+User Opens App
+      |
+      v
+  +----------+     No     +------------------+
+  | Logged   |---------->| Public Pages     |
+  | In?      |           | (Welcome,        |
+  +----+-----+           |  Coaches,        |
+       | Yes             |  Content...)     |
+       v                 +------------------+
+  +----------+
+  | Check    |
+  | Role     |
+  +----+-----+
+       |
+       +--- Admin ----> Back Office (admin dashboard)
+       |
+       +-- Student ---> Front Office (student dashboard)
+
+
+================================================================================
+6. ADMIN (BACK OFFICE) RESPONSIBILITIES
+================================================================================
+
+  Feature                          | Status
+  ---------------------------------|---------------------------------------
+  Sign up                          | DONE - Auth exists (email + OTP)
+  Add & manage students            | PARTIAL - Schema exists, UI placeholder
+  Attendance                       | PARTIAL - Schema exists, UI placeholder
+  Approve student leaves           | MISSING - Not in schema or UI
+  Content management & upload      | MISSING - Not in schema or UI
+  Student performance reports       | PARTIAL - Assessments schema, no reports UI
+  Assign tasks/demos               | MISSING - Not in schema or UI
+  Evaluation (rating & reviews)    | PARTIAL - Basic skill ratings exist
+  Publish announcements            | MISSING - Not in schema or UI
+
+
+================================================================================
+7. STUDENT (FRONT OFFICE) RESPONSIBILITIES
+================================================================================
+
+  Feature                          | Status
+  ---------------------------------|---------------------------------------
+  Log in                           | DONE - Auth exists
+  Apply attendance                 | MISSING - Not built
+  Apply leaves                     | MISSING - Not in schema or UI
+  Fee details & payments           | MISSING - Not in schema or UI
+  Access content & tasks           | MISSING - Not built
+  View own performance reports     | MISSING - Not built
+  Suggestions & feedback           | MISSING - Not in schema or UI
+
+
+================================================================================
+8. PUBLIC (NO LOGIN) PAGES
+================================================================================
+
+  Feature                          | Status
+  ---------------------------------|---------------------------------------
+  Content details                  | MISSING - Not built
+  Achievements                     | MISSING - Not built
+  Announcements                    | MISSING - Not built
+  Fee structure & course details   | MISSING - Not built
+
+
+================================================================================
+9. NEW DATABASE TABLES NEEDED
+================================================================================
+
+  Table              | Purpose
+  -------------------|--------------------------------------------------
+  leaves             | Student leave applications with approval workflow
+  contents/materials | Content uploads for students
+  tasks/assignments  | Tasks and demos assigned to students
+  announcements      | Admin-published announcements
+  fees/payments      | Fee structure and payment records
+  feedback           | Student feedback and suggestions
+
+
+================================================================================
+10. CURRENT PROJECT STATE
+================================================================================
+
+  Layer                | Status
+  ---------------------|--------------------------------------------------
+  Browser Prototype    | Fully functional demo (7 views, localStorage)
+  Flutter Mobile App   | Auth + dashboard shell with placeholder pages
+  Supabase Backend     | Complete schema (10 tables), RLS, workspace RPC
+
+  Tech Stack:
+    - Mobile: Flutter + Riverpod + go_router
+    - Backend: Supabase (PostgreSQL, Auth, RLS)
+    - Prototype: Vanilla HTML/CSS/JS
+
+
+================================================================================
+11. NEXT STEPS
+================================================================================
+
+  1. Git setup - Initialize proper git workflow
+  2. Extend Supabase schema - Add missing tables (leaves, content, tasks,
+     announcements, fees, feedback)
+  3. Build Flutter app - Public pages -> Auth -> Role-based dashboards
+
+
+================================================================================
+                          END OF DOCUMENT
+================================================================================

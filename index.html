@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#102b5c" />
+    <meta name="description" content="Strivo helps coaches measure and manage skill development." />
+    <title>Strivo | Coach workspace</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#overview" aria-label="Strivo overview">
+          <img src="WhatsApp%20Image%202026-09-30%20at%202.35.19%20AM.jpeg" alt="Strivo" />
+          <span class="brand-caption">COACH WORKSPACE</span>
+        </a>
+
+        <div class="workspace-label">YOUR STUDIO</div>
+        <nav class="primary-nav" aria-label="Main navigation">
+          <button class="nav-link active" data-view="overview"><span class="nav-icon">⌂</span>Overview</button>
+          <button class="nav-link" data-view="classes"><span class="nav-icon">▦</span>Classes</button>
+          <button class="nav-link" data-view="students"><span class="nav-icon">♙</span>Students</button>
+          <button class="nav-link" data-view="skills"><span class="nav-icon">◇</span>Skills</button>
+          <button class="nav-link" data-view="assessments"><span class="nav-icon">↗</span>Assessments</button>
+          <button class="nav-link" data-view="progress"><span class="nav-icon">⌁</span>Progress</button>
+          <button class="nav-link" data-view="attendance"><span class="nav-icon">◷</span>Attendance</button>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <div class="coach-card">
+            <div class="coach-avatar">AM</div>
+            <div class="coach-info"><strong>Aisha Mehta</strong><span>Head coach</span></div>
+            <span class="role-badge">COACH</span>
+          </div>
+          <div class="local-note"><span class="status-dot"></span>Demo workspace · saved on this device</div>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <header class="topbar">
+          <div class="breadcrumb"><span>Strivo</span><span class="crumb-divider">/</span><strong id="current-section">Overview</strong></div>
+          <div class="topbar-actions">
+            <span class="today-label" id="today-label"></span>
+            <button class="button button-primary" id="quick-assessment"><span aria-hidden="true">＋</span> Record assessment</button>
+          </div>
+        </header>
+
+        <div class="page-content" id="page-content" aria-live="polite"></div>
+      </main>
+    </div>
+
+    <dialog class="modal" id="app-modal" aria-labelledby="modal-title">
+      <form id="modal-form" method="dialog">
+        <div class="modal-header">
+          <div><span class="eyebrow" id="modal-eyebrow">STRIVO WORKSPACE</span><h2 id="modal-title">Add record</h2></div>
+          <button class="icon-button" type="button" id="close-modal" aria-label="Close dialog">×</button>
+        </div>
+        <div class="modal-fields" id="modal-fields"></div>
+        <div class="modal-footer"><button class="button button-quiet" type="button" id="cancel-modal">Cancel</button><button class="button button-primary" type="submit" id="save-record">Save record</button></div>
+      </form>
+    </dialog>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="app.js" defer></script>
+  </body>
+</html>
