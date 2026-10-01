@@ -7,7 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/providers.dart';
 import '../features/auth/presentation/login_page.dart';
-import '../features/dashboard/presentation/coach_home_page.dart';
+import '../features/back_office/presentation/coach_home_page.dart';
 
 class _AuthRefreshNotifier extends ChangeNotifier {
   _AuthRefreshNotifier(SupabaseClient client) {
