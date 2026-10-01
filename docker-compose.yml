@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+  # Flutter Web App
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - SUPABASE_URL=${SUPABASE_URL}
+        - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+
+  # Migration Runner - applies SQL migrations in order
+  migrate:
+    image: postgres:16-alpine
+    volumes:
+      - ./supabase/migrations:/migrations:ro
+    environment:
+      - PGHOST=${PGHOST:-db}
+      - PGPORT=${PGPORT:-5432}
+      - PGDATABASE=${PGDATABASE:-strivo_db}
+      - PGUSER=${PGUSER:-postgres}
+      - PGPASSWORD=${PGPASSWORD:-postgres}
+    depends_on:
+      - db
+    entrypoint: >
+      sh -c "
+        echo 'Waiting for database...';
+        until pg_isready -h $${PGHOST} -p $${PGPORT}; do sleep 1; done;
+        echo 'Database ready. Running migrations...';
+        for f in /migrations/V*.sql; do
+          echo 'Applying: $$f';
+          psql -h $${PGHOST} -p $${PGPORT} -U $${PGUSER} -d $${PGDATABASE} -f $$f || exit 1;
+        done;
+        echo 'All migrations applied.';
+      "
+    profiles:
+      - migrate
+
+  # Local PostgreSQL (optional - for local development)
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=${PGUSER:-postgres}
+      - POSTGRES_PASSWORD=${PGPASSWORD:-postgres}
+      - POSTGRES_DB=${PGDATABASE:-strivo_db}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    profiles:
+      - local
+
+volumes:
+  pgdata:
