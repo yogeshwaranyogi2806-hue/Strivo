@@ -4,21 +4,21 @@ create schema if not exists private;
 revoke all on schema private from public;
 grant usage on schema private to authenticated;
 
-create table public.profiles (
+create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text not null default '',
   phone text,
   created_at timestamptz not null default now()
 );
 
-create table public.organizations (
+create table if not exists public.organizations (
   id uuid primary key default gen_random_uuid(),
   name text not null check (length(trim(name)) between 2 and 100),
   created_by uuid not null references auth.users(id),
   created_at timestamptz not null default now()
 );
 
-create table public.organization_memberships (
+create table if not exists public.organization_memberships (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -28,10 +28,10 @@ create table public.organization_memberships (
   unique (organization_id, id)
 );
 
-create index organization_memberships_user_idx
+create index if not exists organization_memberships_user_idx
   on public.organization_memberships (user_id, organization_id);
 
-create function private.is_org_member(target_organization_id uuid)
+create or replace function private.is_org_member(target_organization_id uuid)
 returns boolean
 language sql
 stable
@@ -46,7 +46,7 @@ as $$
   );
 $$;
 
-create function private.is_org_coach(target_organization_id uuid)
+create or replace function private.is_org_coach(target_organization_id uuid)
 returns boolean
 language sql
 stable
@@ -67,7 +67,7 @@ revoke all on function private.is_org_coach(uuid) from public;
 grant execute on function private.is_org_member(uuid) to authenticated;
 grant execute on function private.is_org_coach(uuid) to authenticated;
 
-create function public.create_coach_workspace(workspace_name text)
+create or replace function public.create_coach_workspace(workspace_name text)
 returns uuid
 language plpgsql
 security definer
@@ -98,7 +98,7 @@ $$;
 revoke all on function public.create_coach_workspace(text) from public;
 grant execute on function public.create_coach_workspace(text) to authenticated;
 
-create function private.create_profile_for_auth_user()
+create or replace function private.create_profile_for_auth_user()
 returns trigger
 language plpgsql
 security definer
@@ -117,11 +117,14 @@ begin
 end;
 $$;
 
+-- Postgres has no CREATE TRIGGER IF NOT EXISTS, so drop first. Without this a
+-- re-run fails with 'trigger already exists'.
+drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function private.create_profile_for_auth_user();
 
-create table public.classes (
+create table if not exists public.classes (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   name text not null check (length(trim(name)) between 1 and 100),
@@ -134,7 +137,7 @@ create table public.classes (
     references public.organization_memberships (organization_id, id)
 );
 
-create table public.students (
+create table if not exists public.students (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   full_name text not null check (length(trim(full_name)) between 1 and 120),
@@ -144,7 +147,7 @@ create table public.students (
   unique (organization_id, id)
 );
 
-create table public.class_enrollments (
+create table if not exists public.class_enrollments (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   class_id uuid not null,
@@ -161,7 +164,7 @@ create table public.class_enrollments (
   check (ended_on is null or ended_on >= enrolled_on)
 );
 
-create table public.skills (
+create table if not exists public.skills (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   name text not null check (length(trim(name)) between 1 and 100),
@@ -173,7 +176,7 @@ create table public.skills (
   unique (organization_id, name)
 );
 
-create table public.assessments (
+create table if not exists public.assessments (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   student_id uuid not null,
@@ -194,12 +197,12 @@ create table public.assessments (
     references public.classes (organization_id, id)
 );
 
-create index assessments_student_history_idx
+create index if not exists assessments_student_history_idx
   on public.assessments (organization_id, student_id, assessed_on desc);
-create index assessments_skill_history_idx
+create index if not exists assessments_skill_history_idx
   on public.assessments (organization_id, skill_id, assessed_on desc);
 
-create table public.attendance_sessions (
+create table if not exists public.attendance_sessions (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   class_id uuid not null,
@@ -214,7 +217,7 @@ create table public.attendance_sessions (
     references public.organization_memberships (organization_id, id)
 );
 
-create table public.attendance_records (
+create table if not exists public.attendance_records (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   session_id uuid not null,
@@ -254,74 +257,92 @@ grant select, insert, update, delete on
   public.attendance_records
 to authenticated;
 
+drop policy if exists "Users can read their own profile" on public.profiles;
 create policy "Users can read their own profile"
-  on public.profiles for select to authenticated
+on public.profiles for select to authenticated
   using (id = (select auth.uid()));
+drop policy if exists "Users can update their own profile" on public.profiles;
 create policy "Users can update their own profile"
-  on public.profiles for update to authenticated
+on public.profiles for update to authenticated
   using (id = (select auth.uid()))
   with check (id = (select auth.uid()));
 
+drop policy if exists "Members can read their organizations" on public.organizations;
 create policy "Members can read their organizations"
-  on public.organizations for select to authenticated
+on public.organizations for select to authenticated
   using (private.is_org_member(id));
 
+drop policy if exists "Users can read their memberships" on public.organization_memberships;
 create policy "Users can read their memberships"
-  on public.organization_memberships for select to authenticated
+on public.organization_memberships for select to authenticated
   using (user_id = (select auth.uid()) or private.is_org_coach(organization_id));
 
+drop policy if exists "Coaches can read classes" on public.classes;
 create policy "Coaches can read classes"
-  on public.classes for select to authenticated
+on public.classes for select to authenticated
   using (private.is_org_coach(organization_id));
+drop policy if exists "Coaches can manage classes" on public.classes;
 create policy "Coaches can manage classes"
-  on public.classes for all to authenticated
+on public.classes for all to authenticated
   using (private.is_org_coach(organization_id))
   with check (private.is_org_coach(organization_id));
 
+drop policy if exists "Coaches can read students" on public.students;
 create policy "Coaches can read students"
-  on public.students for select to authenticated
+on public.students for select to authenticated
   using (private.is_org_coach(organization_id));
+drop policy if exists "Coaches can manage students" on public.students;
 create policy "Coaches can manage students"
-  on public.students for all to authenticated
+on public.students for all to authenticated
   using (private.is_org_coach(organization_id))
   with check (private.is_org_coach(organization_id));
 
+drop policy if exists "Coaches can read class enrollments" on public.class_enrollments;
 create policy "Coaches can read class enrollments"
-  on public.class_enrollments for select to authenticated
+on public.class_enrollments for select to authenticated
   using (private.is_org_coach(organization_id));
+drop policy if exists "Coaches can manage class enrollments" on public.class_enrollments;
 create policy "Coaches can manage class enrollments"
-  on public.class_enrollments for all to authenticated
+on public.class_enrollments for all to authenticated
   using (private.is_org_coach(organization_id))
   with check (private.is_org_coach(organization_id));
 
+drop policy if exists "Coaches can read skills" on public.skills;
 create policy "Coaches can read skills"
-  on public.skills for select to authenticated
+on public.skills for select to authenticated
   using (private.is_org_coach(organization_id));
+drop policy if exists "Coaches can manage skills" on public.skills;
 create policy "Coaches can manage skills"
-  on public.skills for all to authenticated
+on public.skills for all to authenticated
   using (private.is_org_coach(organization_id))
   with check (private.is_org_coach(organization_id));
 
+drop policy if exists "Coaches can read assessments" on public.assessments;
 create policy "Coaches can read assessments"
-  on public.assessments for select to authenticated
+on public.assessments for select to authenticated
   using (private.is_org_coach(organization_id));
+drop policy if exists "Coaches can manage assessments" on public.assessments;
 create policy "Coaches can manage assessments"
-  on public.assessments for all to authenticated
+on public.assessments for all to authenticated
   using (private.is_org_coach(organization_id))
   with check (private.is_org_coach(organization_id));
 
+drop policy if exists "Coaches can read attendance sessions" on public.attendance_sessions;
 create policy "Coaches can read attendance sessions"
-  on public.attendance_sessions for select to authenticated
+on public.attendance_sessions for select to authenticated
   using (private.is_org_coach(organization_id));
+drop policy if exists "Coaches can manage attendance sessions" on public.attendance_sessions;
 create policy "Coaches can manage attendance sessions"
-  on public.attendance_sessions for all to authenticated
+on public.attendance_sessions for all to authenticated
   using (private.is_org_coach(organization_id))
   with check (private.is_org_coach(organization_id));
 
+drop policy if exists "Coaches can read attendance records" on public.attendance_records;
 create policy "Coaches can read attendance records"
-  on public.attendance_records for select to authenticated
+on public.attendance_records for select to authenticated
   using (private.is_org_coach(organization_id));
+drop policy if exists "Coaches can manage attendance records" on public.attendance_records;
 create policy "Coaches can manage attendance records"
-  on public.attendance_records for all to authenticated
+on public.attendance_records for all to authenticated
   using (private.is_org_coach(organization_id))
   with check (private.is_org_coach(organization_id));

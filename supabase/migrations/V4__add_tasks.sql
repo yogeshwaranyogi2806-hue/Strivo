@@ -1,6 +1,6 @@
 -- V4: Tasks and demos assigned to students
 
-create table public.tasks (
+create table if not exists public.tasks (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   class_id uuid,
@@ -17,22 +17,25 @@ create table public.tasks (
     references public.organization_memberships (organization_id, id)
 );
 
-create index tasks_class_idx
+create index if not exists tasks_class_idx
   on public.tasks (organization_id, class_id, is_active);
 
 alter table public.tasks enable row level security;
 
 grant select, insert, update, delete on public.tasks to authenticated;
 
+drop policy if exists "Coaches can read tasks" on public.tasks;
 create policy "Coaches can read tasks"
-  on public.tasks for select to authenticated
+on public.tasks for select to authenticated
   using (private.is_org_coach(organization_id));
+drop policy if exists "Coaches can manage tasks" on public.tasks;
 create policy "Coaches can manage tasks"
-  on public.tasks for all to authenticated
+on public.tasks for all to authenticated
   using (private.is_org_coach(organization_id))
   with check (private.is_org_coach(organization_id));
+drop policy if exists "Students can read tasks for their classes" on public.tasks;
 create policy "Students can read tasks for their classes"
-  on public.tasks for select to authenticated
+on public.tasks for select to authenticated
   using (
     class_id in (
       select class_id from public.class_enrollments ce
@@ -44,7 +47,7 @@ create policy "Students can read tasks for their classes"
 
 -- Task submissions from students
 
-create table public.task_submissions (
+create table if not exists public.task_submissions (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   task_id uuid not null,
@@ -70,30 +73,34 @@ create table public.task_submissions (
     references public.organization_memberships (organization_id, id)
 );
 
-create index task_submissions_task_idx
+create index if not exists task_submissions_task_idx
   on public.task_submissions (organization_id, task_id);
-create index task_submissions_student_idx
+create index if not exists task_submissions_student_idx
   on public.task_submissions (organization_id, student_id);
 
 alter table public.task_submissions enable row level security;
 
 grant select, insert, update, delete on public.task_submissions to authenticated;
 
+drop policy if exists "Coaches can read task submissions" on public.task_submissions;
 create policy "Coaches can read task submissions"
-  on public.task_submissions for select to authenticated
+on public.task_submissions for select to authenticated
   using (private.is_org_coach(organization_id));
+drop policy if exists "Coaches can manage task submissions" on public.task_submissions;
 create policy "Coaches can manage task submissions"
-  on public.task_submissions for all to authenticated
+on public.task_submissions for all to authenticated
   using (private.is_org_coach(organization_id))
   with check (private.is_org_coach(organization_id));
+drop policy if exists "Students can read own submissions" on public.task_submissions;
 create policy "Students can read own submissions"
-  on public.task_submissions for select to authenticated
+on public.task_submissions for select to authenticated
   using (membership_id in (
     select id from public.organization_memberships
     where user_id = (select auth.uid()) and role = 'student'
   ));
+drop policy if exists "Students can submit tasks" on public.task_submissions;
 create policy "Students can submit tasks"
-  on public.task_submissions for insert to authenticated
+on public.task_submissions for insert to authenticated
   with check (membership_id in (
     select id from public.organization_memberships
     where user_id = (select auth.uid()) and role = 'student'

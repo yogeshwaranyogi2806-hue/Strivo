@@ -4,6 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/theme.dart';
 import '../../../core/providers.dart';
+import '../../../core/services/audit_service.dart';
+import '../../../core/services/auth_service.dart';
+import '../../../core/services/log_service.dart';
 
 class CoachHomePage extends ConsumerStatefulWidget {
   const CoachHomePage({super.key});
@@ -74,7 +77,8 @@ class _CoachHomePageState extends ConsumerState<CoachHomePage> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         destinations: _destinations,
-        onDestinationSelected: (index) => setState(() => _selectedIndex = index),
+        onDestinationSelected: (index) =>
+            setState(() => _selectedIndex = index),
       ),
     );
   }
@@ -133,7 +137,8 @@ class _WorkspaceSetupCard extends ConsumerStatefulWidget {
   const _WorkspaceSetupCard();
 
   @override
-  ConsumerState<_WorkspaceSetupCard> createState() => _WorkspaceSetupCardState();
+  ConsumerState<_WorkspaceSetupCard> createState() =>
+      _WorkspaceSetupCardState();
 }
 
 class _WorkspaceSetupCardState extends ConsumerState<_WorkspaceSetupCard> {
@@ -150,7 +155,8 @@ class _WorkspaceSetupCardState extends ConsumerState<_WorkspaceSetupCard> {
           controller: controller,
           autofocus: true,
           textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(labelText: 'Studio or academy name'),
+          decoration:
+              const InputDecoration(labelText: 'Studio or academy name'),
         ),
         actions: [
           TextButton(
@@ -166,24 +172,31 @@ class _WorkspaceSetupCardState extends ConsumerState<_WorkspaceSetupCard> {
     );
     controller.dispose();
     if (name == null || name.isEmpty) return;
+    if (!mounted) return;
 
     setState(() {
       _busy = true;
       _error = null;
     });
+    AppLog.info('workspace.create_attempt',
+        detail: 'name_length=${name.length}');
     try {
       await ref.read(supabaseClientProvider)!.rpc(
         'create_coach_workspace',
         params: {'workspace_name': name},
       );
+      AuditService.record('workspace.created', detail: name);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Workspace created.')),
         );
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppLog.error('workspace.create_failed', error, stackTrace, detail: name);
+      AuditService.record('workspace.create_failed', detail: name);
       if (mounted) {
-        setState(() => _error = 'Could not create the workspace. Please try again.');
+        setState(
+            () => _error = 'Could not create the workspace. Please try again.');
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -239,6 +252,13 @@ class _WorkspaceSetupCardState extends ConsumerState<_WorkspaceSetupCard> {
 class _MorePage extends StatelessWidget {
   const _MorePage();
 
+  Future<void> _signOut(BuildContext context) async {
+    AppLog.info('auth.sign_out_requested', detail: 'surface=back_office');
+    // End the session first. Navigating to /login while still signed in makes
+    // the router send the user straight back here.
+    await AuthService.signOutAndReturnToLogin(() => context.go('/login'));
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -269,6 +289,57 @@ class _MorePage extends StatelessWidget {
           icon: Icons.how_to_reg_outlined,
           title: 'Attendance',
           description: 'Mark attendance for a class session.',
+        ),
+        const SizedBox(height: 8),
+        const Divider(height: 20),
+        ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+          leading: const Icon(Icons.person_add_alt_outlined,
+              color: StrivoColors.navy),
+          title: const Text('Invite someone',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: const Text('Generate a code for a new coach or student.'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.go('/invite'),
+        ),
+        ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+          leading:
+              const Icon(Icons.link_off_outlined, color: StrivoColors.navy),
+          title: const Text('Student records',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: const Text('Match students who signed up to their record.'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.go('/student-records'),
+        ),
+        ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+          leading: const Icon(Icons.video_library_outlined,
+              color: StrivoColors.navy),
+          title: const Text('Content',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: const Text('Add and publish material for your students.'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.go('/content'),
+        ),
+        ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+          leading:
+              const Icon(Icons.receipt_long_outlined, color: StrivoColors.navy),
+          title: const Text('Activity log',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          subtitle:
+              const Text('Diagnostics and actions recorded on this device.'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.go('/logs'),
+        ),
+        ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+          leading: const Icon(Icons.logout, color: StrivoColors.muted),
+          title: const Text('Sign out',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: const Text('Sign out of this device.'),
+          onTap: () => _signOut(context),
         ),
       ],
     );
@@ -304,7 +375,8 @@ class _FeaturePage extends StatelessWidget {
                       color: StrivoColors.muted,
                     )),
             const SizedBox(height: 16),
-            const Text('This coach workflow is next in the implementation sequence.'),
+            const Text(
+                'This coach workflow is next in the implementation sequence.'),
           ],
         ),
       ),

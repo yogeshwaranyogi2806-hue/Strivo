@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../app/theme.dart';
 import '../../../core/providers.dart';
+import '../../../core/services/audit_service.dart';
+import '../../../core/services/invitation_service.dart';
+import '../../../core/services/log_service.dart';
 
 enum _LoginMethod { email, mobile }
 
@@ -36,10 +40,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final method = _method == _LoginMethod.email ? 'email' : 'phone';
     setState(() {
       _busy = true;
       _error = null;
     });
+    AppLog.info('auth.login_attempt', detail: 'method=$method');
 
     try {
       final client = ref.read(supabaseClientProvider)!;
@@ -48,23 +54,45 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           email: _emailController.text.trim(),
           password: _passwordController.text,
         );
+        AuditService.record('auth.login_succeeded', detail: 'method=$method');
+        // An invite redeemed after an email confirmation may still be waiting.
+        final inviteError = await InvitationService.redeemPendingIfAny();
+        if (inviteError != null) {
+          AppLog.warn('auth.pending_invite_failed', detail: inviteError);
+          AuditService.record('invitation.accept_failed');
+        }
       } else if (!_waitingForOtp) {
         await client.auth.signInWithOtp(
           phone: _phoneController.text.trim(),
           shouldCreateUser: false,
         );
+        if (!mounted) return;
         setState(() => _waitingForOtp = true);
+        AuditService.record('auth.otp_requested', detail: 'method=$method');
       } else {
         await client.auth.verifyOTP(
           phone: _phoneController.text.trim(),
           token: _otpController.text.trim(),
           type: OtpType.sms,
         );
+        AuditService.record('auth.login_succeeded', detail: 'method=$method');
       }
     } on AuthException catch (error) {
-      setState(() => _error = error.message);
-    } catch (_) {
-      setState(() => _error = 'Sign-in failed. Check your connection and try again.');
+      // Log the status code, not the message: Supabase messages can echo back
+      // the identifier that was typed in.
+      AppLog.warn('auth.login_failed',
+          detail: 'method=$method status=${error.statusCode}');
+      AuditService.record('auth.login_failed', detail: 'method=$method');
+      if (mounted) setState(() => _error = error.message);
+    } catch (error, stackTrace) {
+      AppLog.error('auth.login_failed_unexpected', error, stackTrace,
+          detail: 'method=$method');
+      AuditService.record('auth.login_failed',
+          detail: 'method=$method reason=unexpected');
+      if (mounted) {
+        setState(() =>
+            _error = 'Sign-in failed. Check your connection and try again.');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -102,9 +130,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         const SizedBox(height: 6),
                         Text(
                           'Sign in to manage your coaching workspace.',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: StrivoColors.muted,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: StrivoColors.muted,
+                                  ),
                         ),
                         const SizedBox(height: 22),
                         SegmentedButton<_LoginMethod>(
@@ -129,17 +158,20 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
                             autofillHints: const [AutofillHints.username],
-                            decoration: const InputDecoration(labelText: 'Email address'),
-                            validator: (value) => value == null || !value.contains('@')
-                                ? 'Enter a valid email address.'
-                                : null,
+                            decoration: const InputDecoration(
+                                labelText: 'Email address'),
+                            validator: (value) =>
+                                value == null || !value.contains('@')
+                                    ? 'Enter a valid email address.'
+                                    : null,
                           ),
                           const SizedBox(height: 12),
                           TextFormField(
                             controller: _passwordController,
                             obscureText: true,
                             autofillHints: const [AutofillHints.password],
-                            decoration: const InputDecoration(labelText: 'Password'),
+                            decoration:
+                                const InputDecoration(labelText: 'Password'),
                             validator: (value) => value == null || value.isEmpty
                                 ? 'Enter your password.'
                                 : null,
@@ -148,12 +180,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           TextFormField(
                             controller: _phoneController,
                             keyboardType: TextInputType.phone,
-                            autofillHints: const [AutofillHints.telephoneNumber],
+                            autofillHints: const [
+                              AutofillHints.telephoneNumber
+                            ],
                             decoration: const InputDecoration(
                               labelText: 'Mobile number',
                               hintText: '+91 98765 43210',
                             ),
-                            validator: (value) => value == null || value.trim().length < 8
+                            validator: (value) => value == null ||
+                                    value.trim().length < 8
                                 ? 'Enter your mobile number with country code.'
                                 : null,
                           ),
@@ -165,16 +200,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               autofillHints: const [AutofillHints.oneTimeCode],
                               decoration: const InputDecoration(
                                   labelText: 'Verification code'),
-                              validator: (value) => value == null || value.trim().length < 4
-                                  ? 'Enter the code sent to your phone.'
-                                  : null,
+                              validator: (value) =>
+                                  value == null || value.trim().length < 4
+                                      ? 'Enter the code sent to your phone.'
+                                      : null,
                             ),
                           ],
                         ],
                         if (_error != null) ...[
                           const SizedBox(height: 12),
                           Text(_error!,
-                              style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                              style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error)),
                         ],
                         const SizedBox(height: 20),
                         FilledButton(
@@ -183,9 +220,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
                                 )
-                              : Text(_method == _LoginMethod.mobile && !_waitingForOtp
+                              : Text(_method == _LoginMethod.mobile &&
+                                      !_waitingForOtp
                                   ? 'Send verification code'
                                   : 'Sign in'),
                         ),
@@ -195,9 +234,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               ? 'Phone sign-in requires SMS verification configured in Supabase.'
                               : 'Use the coach account provided for your pilot workspace.',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: StrivoColors.muted,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: StrivoColors.muted,
+                                  ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextButton(
+                          onPressed: _busy ? null : () => context.go('/signup'),
+                          child: const Text(
+                              'Create an account with an invitation code'),
                         ),
                       ],
                     ),

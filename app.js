@@ -1,5 +1,68 @@
 const STORAGE_KEY = 'strivo-coach-workspace-v1';
 
+// --- Activity log ---------------------------------------------------------
+// A browser cannot write a rolling file, so entries go to the console and an
+// in-memory buffer, and "Export log" downloads one file for the day. Event
+// names match the mobile app so both share one vocabulary.
+const LOG_SESSION = `web-${Date.now().toString(36)}`;
+const LOG_BUFFER_LIMIT = 200;
+const logEntries = [];
+
+function sanitise(value) {
+  if (value === undefined || value === null) return '';
+  return String(value)
+    .replace(/eyJ[A-Za-z0-9_-]{8,}/g, '<token>')
+    .replace(/\b(password|pass|otp|token|secret|api[_-]?key)\b\s*[:=]\s*\S+/gi, (match, keyword) => `${keyword}=<redacted>`);
+}
+
+function formatLogEntry(entry) {
+  return Object.entries(entry)
+    .map(([key, value]) => {
+      const quoted = typeof value === 'string' && (value.includes(' ') || value.includes('"'));
+      return `${key}=${quoted ? `"${value.replace(/"/g, '\\"')}"` : value}`;
+    })
+    .join(' ');
+}
+
+function writeLog(level, event, detail, error, stack) {
+  const entry = { ts: new Date().toISOString(), level, event, session: LOG_SESSION };
+  if (detail) entry.detail = sanitise(detail);
+  if (error) entry.error = sanitise(error);
+  if (stack) entry.stack = sanitise(stack);
+  logEntries.push(entry);
+  if (logEntries.length > LOG_BUFFER_LIMIT) logEntries.shift();
+  const line = `strivo ${formatLogEntry(entry)}`;
+  if (level === 'error') console.error(line);
+  else if (level === 'warn') console.warn(line);
+  else console.log(line);
+  return entry;
+}
+
+const logInfo = (event, detail) => writeLog('info', event, detail);
+const logWarn = (event, detail) => writeLog('warn', event, detail);
+const logAction = (event, detail) => writeLog('action', event, detail);
+const logError = (event, error, stack, detail) => writeLog('error', event, detail, error, stack);
+
+window.addEventListener('error', (event) => logError('window.error', event.error || event.message, event.error && event.error.stack, event.filename));
+window.addEventListener('unhandledrejection', (event) => logError('promise.rejected', event.reason, event.reason && event.reason.stack));
+
+function dayStamp(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function downloadLog() {
+  const header = [`Strivo prototype log · session ${LOG_SESSION}`, `Exported ${new Date().toISOString()}`, '---'];
+  const body = logEntries.map(formatLogEntry);
+  const blob = new Blob([header.concat(body).join('\n')], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `strivo-${dayStamp()}.log`;
+  link.click();
+  URL.revokeObjectURL(url);
+  logInfo('log.exported', `${logEntries.length} entries`);
+}
+
 const starterData = {
   students: [
     { id: 's1', name: 'Mira Kapoor', group: 'U12 · Foundations', joined: '2026-07-12' },
@@ -39,6 +102,7 @@ function loadData() {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) return { ...structuredClone(starterData), ...JSON.parse(saved) };
   } catch (error) {
+    logWarn('storage.read_failed', error && error.message);
     console.warn('Strivo could not read saved workspace data.', error);
   }
   return structuredClone(starterData);
@@ -65,7 +129,7 @@ function persist() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch (error) {
     notify('Could not save on this device.');
-    console.warn('Strivo could not save workspace data.', error);
+    logError('storage.write_failed', error && error.message, error && error.stack);
   }
 }
 
@@ -269,26 +333,38 @@ function openForm(type) {
 function saveForm(event) {
   event.preventDefault();
   const values = Object.fromEntries(new FormData(form).entries());
-  const id = `${form.dataset.type[0]}${Date.now()}`;
-  if (form.dataset.type === 'student') {
-    if (!values.group) { notify('Create a class first, then add students.'); return; }
-    data.students.unshift({ id, name: values.name.trim(), group: values.group, joined: values.joined });
-    const selectedClass = data.classes.find((item) => item.name === values.group);
-    if (selectedClass) selectedClass.studentIds.push(id);
+  const type = form.dataset.type;
+  const id = `${type[0]}${Date.now()}`;
+  // Student names and coach notes are deliberately left out: the log records
+  // what happened, not who it happened to.
+  try {
+    if (type === 'student') {
+      if (!values.group) { notify('Create a class first, then add students.'); logWarn('student.add_blocked', 'no_class_selected'); return; }
+      data.students.unshift({ id, name: values.name.trim(), group: values.group, joined: values.joined });
+      const selectedClass = data.classes.find((item) => item.name === values.group);
+      if (selectedClass) selectedClass.studentIds.push(id);
+      logAction('student.added', `group=${values.group}`);
+    }
+    if (type === 'class') {
+      data.classes.push({ id, name: values.name.trim(), day: values.day.trim(), time: values.time.trim(), coach: values.coach.trim(), studentIds: [] });
+      logAction('class.created', `${values.name.trim()} · ${values.day.trim()} · ${values.time.trim()}`);
+    }
+    if (type === 'skill') {
+      data.skills.push({ id, name: values.name.trim(), category: values.category, scale: '5-point scale' });
+      logAction('skill.added', `category=${values.category}`);
+    }
+    if (type === 'assessment') {
+      data.assessments.unshift({ id, studentId: values.studentId, skillId: values.skillId, score: Number(values.score), note: values.note.trim(), date: values.date });
+      logAction('assessment.recorded', `skill=${values.skillId} score=${values.score}`);
+    }
+    persist();
+    modal.close();
+    render();
+    notify(`${document.querySelector('#modal-title').textContent.replace('Add ', '').replace('Create ', '')} saved.`);
+  } catch (error) {
+    logError(`${type}.save_failed`, error && error.message, error && error.stack);
+    notify('Could not save that record.');
   }
-  if (form.dataset.type === 'class') {
-    data.classes.push({ id, name: values.name.trim(), day: values.day.trim(), time: values.time.trim(), coach: values.coach.trim(), studentIds: [] });
-  }
-  if (form.dataset.type === 'skill') {
-    data.skills.push({ id, name: values.name.trim(), category: values.category, scale: '5-point scale' });
-  }
-  if (form.dataset.type === 'assessment') {
-    data.assessments.unshift({ id, studentId: values.studentId, skillId: values.skillId, score: Number(values.score), note: values.note.trim(), date: values.date });
-  }
-  persist();
-  modal.close();
-  render();
-  notify(`${document.querySelector('#modal-title').textContent.replace('Add ', '').replace('Create ', '')} saved.`);
 }
 
 document.querySelectorAll('.nav-link').forEach((link) => link.addEventListener('click', () => {
@@ -299,6 +375,7 @@ document.querySelectorAll('.nav-link').forEach((link) => link.addEventListener('
 document.querySelector('#quick-assessment').addEventListener('click', () => openForm('assessment'));
 document.querySelector('#close-modal').addEventListener('click', () => modal.close());
 document.querySelector('#cancel-modal').addEventListener('click', () => modal.close());
+document.querySelector('#export-log').addEventListener('click', downloadLog);
 form.addEventListener('submit', saveForm);
 
 page.addEventListener('click', (event) => {
@@ -315,6 +392,7 @@ page.addEventListener('click', (event) => {
     data.attendance[key] = current === 'unmarked' ? 'present' : current === 'present' ? 'absent' : 'unmarked';
     persist();
     render();
+    logAction('attendance.marked', `student=${button.dataset.attendance} status=${data.attendance[key]} date=${localDate}`);
   }
 });
 
@@ -334,3 +412,4 @@ page.addEventListener('change', (event) => {
 });
 
 render();
+logInfo('app.start', `view=${currentView} students=${data.students.length} classes=${data.classes.length}`);

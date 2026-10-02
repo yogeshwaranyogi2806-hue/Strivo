@@ -1,0 +1,44 @@
+# Keep the build context small and stable.
+#
+# Without this the context shipped ~63MB of generated files, including
+# mobile/android/.gradle. A Gradle lock file in there was intermittently held by
+# another process, which made the context transfer fail outright:
+#
+#   read mobile/android/.gradle/.../checksums.lock: The process cannot access
+#   the file because another process has locked a portion of the file.
+#
+# Docker then reused the previous image, so a rebuild looked like it had
+# succeeded while serving stale JavaScript.
+
+.git
+.gitignore
+**/.DS_Store
+
+# Flutter / Dart generated output
+**/.dart_tool/
+**/.packages
+**/build/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.pub-cache/
+**/.pub/
+
+# Android build state. The app ships as web only, so none of this is needed to
+# compile it, and .gradle in particular holds lock files.
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/build/
+mobile/android/local.properties
+mobile/android/key.properties
+**/*.iml
+
+# Other platform folders: present for IDE convenience, unused by the web build.
+mobile/ios/
+mobile/linux/
+mobile/macos/
+mobile/windows/
+
+# Editor noise
+.idea/
+.vscode/
+*.swp

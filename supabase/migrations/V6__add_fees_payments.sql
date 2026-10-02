@@ -1,6 +1,6 @@
 -- V6: Fee structure and payment records
 
-create table public.fee_structures (
+create table if not exists public.fee_structures (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   name text not null check (length(trim(name)) between 1 and 100),
@@ -13,22 +13,25 @@ create table public.fee_structures (
   unique (organization_id, name)
 );
 
-create index fee_structures_org_idx
+create index if not exists fee_structures_org_idx
   on public.fee_structures (organization_id, is_active);
 
 alter table public.fee_structures enable row level security;
 
 grant select, insert, update, delete on public.fee_structures to authenticated;
 
+drop policy if exists "Coaches can read fee structures" on public.fee_structures;
 create policy "Coaches can read fee structures"
-  on public.fee_structures for select to authenticated
+on public.fee_structures for select to authenticated
   using (private.is_org_coach(organization_id));
+drop policy if exists "Coaches can manage fee structures" on public.fee_structures;
 create policy "Coaches can manage fee structures"
-  on public.fee_structures for all to authenticated
+on public.fee_structures for all to authenticated
   using (private.is_org_coach(organization_id))
   with check (private.is_org_coach(organization_id));
+drop policy if exists "Students can read fee structures" on public.fee_structures;
 create policy "Students can read fee structures"
-  on public.fee_structures for select to authenticated
+on public.fee_structures for select to authenticated
   using (
     is_active = true
     and organization_id in (
@@ -39,7 +42,7 @@ create policy "Students can read fee structures"
 
 -- Payment records
 
-create table public.payments (
+create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   student_id uuid not null,
@@ -62,24 +65,27 @@ create table public.payments (
     references public.fee_structures (organization_id, id)
 );
 
-create index payments_student_idx
+create index if not exists payments_student_idx
   on public.payments (organization_id, student_id, created_at desc);
-create index payments_status_idx
+create index if not exists payments_status_idx
   on public.payments (organization_id, status);
 
 alter table public.payments enable row level security;
 
 grant select, insert, update, delete on public.payments to authenticated;
 
+drop policy if exists "Coaches can read payments" on public.payments;
 create policy "Coaches can read payments"
-  on public.payments for select to authenticated
+on public.payments for select to authenticated
   using (private.is_org_coach(organization_id));
+drop policy if exists "Coaches can manage payments" on public.payments;
 create policy "Coaches can manage payments"
-  on public.payments for all to authenticated
+on public.payments for all to authenticated
   using (private.is_org_coach(organization_id))
   with check (private.is_org_coach(organization_id));
+drop policy if exists "Students can read own payments" on public.payments;
 create policy "Students can read own payments"
-  on public.payments for select to authenticated
+on public.payments for select to authenticated
   using (membership_id in (
     select id from public.organization_memberships
     where user_id = (select auth.uid()) and role = 'student'

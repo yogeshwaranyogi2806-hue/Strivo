@@ -1,6 +1,6 @@
 -- V2: Student leave applications with approval workflow
 
-create table public.leaves (
+create table if not exists public.leaves (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   student_id uuid not null,
@@ -23,30 +23,34 @@ create table public.leaves (
   check (end_date >= start_date)
 );
 
-create index leaves_student_idx
+create index if not exists leaves_student_idx
   on public.leaves (organization_id, student_id, created_at desc);
-create index leaves_status_idx
+create index if not exists leaves_status_idx
   on public.leaves (organization_id, status);
 
 alter table public.leaves enable row level security;
 
 grant select, insert, update, delete on public.leaves to authenticated;
 
+drop policy if exists "Coaches can read leaves" on public.leaves;
 create policy "Coaches can read leaves"
-  on public.leaves for select to authenticated
+on public.leaves for select to authenticated
   using (private.is_org_coach(organization_id));
+drop policy if exists "Coaches can manage leaves" on public.leaves;
 create policy "Coaches can manage leaves"
-  on public.leaves for all to authenticated
+on public.leaves for all to authenticated
   using (private.is_org_coach(organization_id))
   with check (private.is_org_coach(organization_id));
+drop policy if exists "Students can read own leaves" on public.leaves;
 create policy "Students can read own leaves"
-  on public.leaves for select to authenticated
+on public.leaves for select to authenticated
   using (membership_id in (
     select id from public.organization_memberships
     where user_id = (select auth.uid()) and role = 'student'
   ));
+drop policy if exists "Students can apply for leave" on public.leaves;
 create policy "Students can apply for leave"
-  on public.leaves for insert to authenticated
+on public.leaves for insert to authenticated
   with check (membership_id in (
     select id from public.organization_memberships
     where user_id = (select auth.uid()) and role = 'student'

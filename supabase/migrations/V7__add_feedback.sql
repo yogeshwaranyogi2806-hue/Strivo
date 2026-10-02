@@ -1,6 +1,6 @@
 -- V7: Student suggestions and feedback
 
-create table public.feedback (
+create table if not exists public.feedback (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   membership_id uuid not null,
@@ -20,30 +20,34 @@ create table public.feedback (
     references public.organization_memberships (organization_id, id)
 );
 
-create index feedback_org_idx
+create index if not exists feedback_org_idx
   on public.feedback (organization_id, status, created_at desc);
-create index feedback_member_idx
+create index if not exists feedback_member_idx
   on public.feedback (organization_id, membership_id);
 
 alter table public.feedback enable row level security;
 
 grant select, insert, update, delete on public.feedback to authenticated;
 
+drop policy if exists "Coaches can read feedback" on public.feedback;
 create policy "Coaches can read feedback"
-  on public.feedback for select to authenticated
+on public.feedback for select to authenticated
   using (private.is_org_coach(organization_id));
+drop policy if exists "Coaches can manage feedback" on public.feedback;
 create policy "Coaches can manage feedback"
-  on public.feedback for all to authenticated
+on public.feedback for all to authenticated
   using (private.is_org_coach(organization_id))
   with check (private.is_org_coach(organization_id));
+drop policy if exists "Students can read own feedback" on public.feedback;
 create policy "Students can read own feedback"
-  on public.feedback for select to authenticated
+on public.feedback for select to authenticated
   using (membership_id in (
     select id from public.organization_memberships
     where user_id = (select auth.uid()) and role = 'student'
   ));
+drop policy if exists "Students can submit feedback" on public.feedback;
 create policy "Students can submit feedback"
-  on public.feedback for insert to authenticated
+on public.feedback for insert to authenticated
   with check (membership_id in (
     select id from public.organization_memberships
     where user_id = (select auth.uid()) and role = 'student'

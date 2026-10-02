@@ -49,6 +49,8 @@ button { cursor: pointer; }
 .role-badge { margin-left: auto; font-size: 8px; color: #b7c9e8; font-weight: 700; letter-spacing: .09em; }
 .local-note { display: flex; align-items: center; gap: 7px; color: #8597b5; font-size: 9px; }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #55c697; }
+#export-log { margin-top: 11px; color: #99a9c3; }
+#export-log:hover { color: #fff; }
 
 .main-area { min-width: 0; }
 .topbar { height: 67px; padding: 0 42px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: #fff; }
